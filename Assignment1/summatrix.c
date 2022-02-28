@@ -1,14 +1,9 @@
-/*************************************************************************
- * CS149 Operating System
+/**
+ * @file summatrix.c
  * 
- * Prof. Bill
- * 
- * Assignment 1 - Matrix Sum
- * 
- * Student 1: Hoang Phuc Luan Truong (Luan)
- * Student 2: Shubham Goswami
- * 
- * **********************************************************************/
+ * @author Hoang (Luan) Truong
+ */
+
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -18,7 +13,9 @@
 
 
 
-/**** Function Prototypes ****/
+//===========================================================================//
+//=========================== Functions Prototypes ==========================//
+//===========================================================================//
 
 /**
  * @brief check if the input entered is valid
@@ -28,14 +25,12 @@
  */
 bool validate_input(int argc, char** argv);
 
-
 /**
  * @brief get the extension of a file
  * @param filepath path to the file
  * @return the given file's extension
  */
 const char* get_file_extension(const char* filepath);
-
 
 /**
  * @brief print a negative value warning on the console
@@ -44,22 +39,19 @@ const char* get_file_extension(const char* filepath);
  */
 void print_warning(int value, unsigned int row_num);
 
-
 /**
  * @brief print an error message on the console
  * @param message the error message to be printed
  */
 void print_error(char* message);
 
-/*****************************/
 
 
 
 
-
-/***********************************/
-/********** Main Function **********/
-/***********************************/
+//===========================================================================//
+//                               Main Function                               //
+//===========================================================================//
 
 int main(int argc, char** argv)
 {
@@ -135,6 +127,12 @@ int main(int argc, char** argv)
 
 
 
+//===========================================================================//
+//=========================== Functions Definitions =========================//
+//===========================================================================//
+
+
+
 bool validate_input(int argc, char** argv)
 {
     char* error_message;
@@ -188,8 +186,6 @@ bool validate_input(int argc, char** argv)
 
 
 
-
-
 const char* get_file_extension(const char* filepath)
 {
     const char *dot = strrchr(filepath, '.');
@@ -199,8 +195,6 @@ const char* get_file_extension(const char* filepath)
     }
     return dot + 1;
 }
-
-
 
 
 
@@ -214,8 +208,6 @@ void print_warning(int value, unsigned int row_num)
     printf("found on row %d\n", row_num);
     printf("\033[0m");          // reset text color
 }
-
-
 
 
 
