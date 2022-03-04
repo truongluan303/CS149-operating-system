@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 
 
 //===========================================================================//
@@ -24,7 +25,7 @@
  * @param argv the arguments entered
  * @return true if all inputs entered are valid
  */
-bool validate_input(int argc, char** argv);
+int validate_input(int argc, char** argv);
 
 /**
  * @brief Get the extension of a file
@@ -59,54 +60,20 @@ int calculate_matrix_sum(char* filepath, int n);
 
 
 
-
-
 //===========================================================================//
 //                                Main Function                              //
 //===========================================================================//
 
 int main(int argc, char** args)
 {
-    // Creating first child
-    int n1 = fork();
-  
-    // Creating second child. First child
-    // also executes this line and creates
-    // grandchild.
-    int n2 = fork();
-  
-    if (n1 > 0 && n2 > 0)
+    // check if the command line input is valid
+    int ret_code = validate_input(argc, args);
+    if (ret_code != 0)
     {
-        printf("parent\n");
-        printf("%d %d \n", n1, n2);
-        printf(" my id is %d \n", getpid());
-        printf(" my parentid is %d \n", getppid());
+        return ret_code;
     }
-    else if (n1 == 0 && n2 > 0)
-    {
-        printf("First child\n");
-        printf("%d %d \n", n1, n2);
-        printf("my id is %d  \n", getpid());
-        printf(" my parentid is %d \n", getppid());
-    }
-    else if (n1 > 0 && n2 == 0)
-    {
-        printf("second child\n");
-        printf("%d %d \n", n1, n2);
-        printf("my id is %d  \n", getpid());
-        printf(" my parentid is %d \n", getppid());
-    }
-    else {
-        printf("third child\n");
-        printf("%d %d \n", n1, n2);
-        printf(" my id is %d \n", getpid());
-        printf(" my parentid is %d \n", getppid());
-    }
-  
     return 0;
 }
-
-
 
 
 
@@ -116,55 +83,45 @@ int main(int argc, char** args)
 
 
 
-bool validate_input(int argc, char** argv)
+int validate_input(int argc, char** argv)
 {
     char* error_message;
-    bool is_valid = true;
+    int return_code = 0;
 
     // if not enough arguments
     if (argc < 3)
     {
-        is_valid = false;
         error_message = "Error: Not enough input arguments\n";
-    }
-    // if too many arguments
-    else if (argc > 3)
-    {
-        is_valid = false;
-        error_message = "Error: Too many input arguments\n";
     }
     // if number of arguments is valid
     else
     {
-        char* filepath = *(argv + 1);
-        char* n = *(argv + 2);
-
         // check whether the file's extension is txt
-        if (strcmp(get_file_extension(filepath), "txt") != 0)
+        for (unsigned short i = 0; i < argc - 1; i++)
         {
-            is_valid = false;
-            error_message = "Error: Given file is not a text file\n";
+            char *filepath = *(argv + i);
+            if (strcmp(get_file_extension(filepath), "txt") != 0) {
+                return_code = 1;
+                error_message = "Error: An argument input is not a text file\n";
+            }
         }
         // check whether the given N parameter is a valid non-negative integer
-        else
+        char* n = *(argv + argc - 1);
+        for (unsigned short i = 0; n[i] != '\0'; i++)
         {
-            for (unsigned short i = 0; n[i] != '\0'; i++)
+            if (isdigit(n[i]) == 0)
             {
-                if (isdigit(n[i]) == 0)
-                {
-                    is_valid = false;
-                    error_message = "Error: N parameter is not valid\n";
-                }
+                return_code = 1;
+                error_message = "Error: N parameter is not valid\n";
             }
         }
     }
-    if (is_valid)
-    {
-        return true;
-    }
     // print error message if not valid
-    print_error(error_message);
-    return false;
+    if (return_code != 0)
+    {
+        print_error(error_message);
+    }
+    return return_code;
 }
 
 
@@ -207,12 +164,12 @@ int calculate_matrix_sum(char* filepath, int n)
 {
     FILE* file;                             // the input file
     file = fopen(filepath, "r");            // try open the given file
-    if (file == NULL)                       // show error and return 1 if the unable to open
+    // if the file cannot be opened, print error message and exit with code 1
+    if (file == NULL)
     {
-        print_error("Error: Unable to open the given file");
-        return -1;
+        print_error("Range: cannot open file");
+        exit(1);
     }
-
     unsigned int result = 0;                // the sum to be calculated
     unsigned int count = 0;                 // keep track of the amount of numbers on a line
     unsigned int row = 1;                   // current row/line
@@ -245,9 +202,7 @@ int calculate_matrix_sum(char* filepath, int n)
                 ignore = true;
             }
         }
-
         ch = getc(file);
-
         if (ch == '\n')                 // if newline detected
         {
             row++;                      // increase the row number
