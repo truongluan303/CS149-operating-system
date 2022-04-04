@@ -182,32 +182,31 @@ void report_error(const char* message, bool exit_program)
 
 int calculate_matrix_sum(const char* filepath, unsigned int n)
 {
-    FILE* file;     // the input file
-    file = fopen(filepath, "r");    // try open the given file
+    FILE* file;                         // the input file
+    file = fopen(filepath, "r");        // try open the given file
 
-    // if the file cannot be opened, print error message and exit with code 1
     if (file == NULL)
     {
         report_error("Range: cannot open file", false);
         return -1;
     }
 
-    unsigned int result = 0;                // the sum to be calculated
-    unsigned int count = 0;                 // keep track of the amount of numbers on a line
-    unsigned int row = 1;                   // current row/line
-    int num;                                // contains the current number read
-    char ch = 0;                            // contains the char read
-    bool ignore = false;                    // ignore the number read if true
+    unsigned int    result  = 0;        // the sum to be calculated
+    unsigned int    count   = 0;        // count the no. of numbers on a line
+    unsigned int    row     = 1;        // current row/line
+    int             num;                // contains the current number read
+    char            ch      = 0;        // contains the char read
+    bool         ignore     = false;    // ignore the number read if true
 
     while (ch != EOF)
     {
         // if `ch` is a number
         if (isdigit(ch) || ch == '-')
         {                                   
-            ungetc(ch, file);               // push ch back and scan the whole number
+            ungetc(ch, file);           // push ch back & scan the whole number
             fscanf(file, "%d", &num);
 
-            if (!ignore)                               // skip if ignore is set
+            if (!ignore)                // skip if ignore is set
             {
                 if (num < 0) print_warning(num, row);
                 else result += num;
@@ -224,7 +223,7 @@ int calculate_matrix_sum(const char* filepath, unsigned int n)
             ignore = false;             // reset ignore flag
         }
     }
-    fclose(file);                // close the file
+    fclose(file);                       // close the file
     return result;                      // return the result calculated
 }
 
@@ -232,8 +231,11 @@ int calculate_matrix_sum(const char* filepath, unsigned int n)
 void process_matrices_parallel(unsigned int i, int fd[][2], unsigned int argc,
                                char** args, unsigned int n)
 {
-    if (i == 0) return;
-
+    if (i == 0) 
+    {
+        printf("returning\n");
+        return;
+    }
     int pid = fork();
 
     // if fork failed
@@ -241,7 +243,9 @@ void process_matrices_parallel(unsigned int i, int fd[][2], unsigned int argc,
     // child process
     if (pid == 0)
     {
+        printf("child\n");
         //make recursion to process all the input files in parallel
+        printf("Processing %s...\n", args[i]);
         process_matrices_parallel(i - 1, fd, argc, args, n);
         unsigned int sum = calculate_matrix_sum(args[i], n);
 
@@ -252,6 +256,7 @@ void process_matrices_parallel(unsigned int i, int fd[][2], unsigned int argc,
     // parent process
     else
     {
+        printf("parent\n");
         close(fd[n - 1][1]);
         wait(NULL);
     }
