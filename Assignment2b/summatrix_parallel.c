@@ -47,7 +47,7 @@ int*    shared_mem;         // the shared memory
 
 void init_globs(int arg_c, char** arg_v);
 
-BOOLEAN validate_input();
+BOOLEAN validate_input(int argv, char** argc);
 
 const char* get_file_extension(const char* filepath);
 
@@ -66,10 +66,11 @@ int calculate_matrix_sum(const char* filepath, unsigned int n);
 
 int main(int arg_c, char** arg_v)
 {
-    init_globs(arg_c, arg_v);
-
     // check if the command line input is valid
-    if (validate_input(argc, argv) == FALSE) return 1;
+    if (validate_input(arg_c, arg_v) == FALSE) return 1;
+
+    // initialize global variables
+    init_globs(arg_c, arg_v);
 
     int num_of_files = argc - 2;
 
@@ -104,10 +105,8 @@ void init_globs(int arg_c, char** arg_v)
 /* validate_input               Check if the input arguments are valid       */
 /*===========================================================================*/
 
-BOOLEAN validate_input()
+BOOLEAN validate_input(int argc, char** argv)
 {
-    char* error_message;
-
     // if not enough arguments, then show error and return
     if (argc < 3)
     {
