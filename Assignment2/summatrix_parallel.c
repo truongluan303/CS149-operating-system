@@ -119,8 +119,6 @@ int main(int argc, char** args)
 
 void validate_input(unsigned int argc, char** argv)
 {
-    char* error_message;
-
     // if not enough arguments
     if (argc < 3)
     {
