@@ -17,6 +17,13 @@
 #include <fcntl.h>
 #include <stdbool.h>
 
+#define MAX_NUM_LINES   1024
+#define MAX_LINE_LENGTH 10
+
+#define main_realloc(a,b) REALLOC(a, b, __FILE__, __LINE__, __FUNCTION__)
+#define main_malloc(a) MALLOC(a ,__FILE__, __LINE__, __FUNCTION__)
+#define main_free(a) FREE(a, __FILE__, __LINE__, __FUNCTION__)
+
 
             /*********************************************/
             /*                                           */
@@ -32,6 +39,201 @@ void print_warning(int value, unsigned int row_num);
 
 void report_error(const char* message, bool exit_program);
 
+char* PRINT_TRACE();
+
+void* REALLOC(void* p, int t, char* file, int line, const char* function);
+
+void* MALLOC(int t,char* file,int line,const char* function);
+
+void FREE(void* p,char* file,int line, const char* function);
+
+
+            /*********************************************/
+            /*                                           */
+            /*                Stack Trace                */
+            /*                                           */
+            /*********************************************/
+
+/*===========================================================================*/
+/* TRACE_NODE_STRUCT            The node to form the stack                   */
+/*===========================================================================*/
+
+struct TRACE_NODE_STRUCT
+{
+    char* functionid;                       // pointer to function identifier
+    struct TRACE_NODE_STRUCT* next;         // pointer to next node
+};
+
+typedef struct TRACE_NODE_STRUCT TRACE_NODE;
+
+static TRACE_NODE* TRACE_TOP = NULL;        // the top of the stack
+
+/*===========================================================================*/
+/* PUSH_TRACE                   Add to the top of the stack                  */
+/*===========================================================================*/
+
+void PUSH_TRACE(char* p)
+{
+    TRACE_NODE*     tnode;
+    static char     glob[] = "global";
+
+    if (TRACE_TOP == NULL) 
+    {
+        TRACE_TOP = (TRACE_NODE*) malloc(sizeof(TRACE_NODE));
+        if (TRACE_TOP == NULL)
+        {
+            report_error("PUSH_TRACE: memory allocation error\n", true);
+        }
+        TRACE_TOP->functionid = glob;
+        TRACE_TOP->next = NULL;
+    }
+
+    // create the node for p
+    tnode = (TRACE_NODE*) malloc(sizeof(TRACE_NODE));
+
+    if (tnode == NULL) 
+    {
+        report_error("PUSH_TRACE: memory allocation error\n", true);
+    }
+
+    tnode->functionid   = p;
+    tnode->next         = TRACE_TOP;        // prepend fnode
+    TRACE_TOP           = tnode;            // TRACE_TOP points to the head
+}
+
+/*===========================================================================*/
+/* POP_TRACE                    Pop out the top of the stack                 */
+/*===========================================================================*/
+
+void POP_TRACE() 
+{
+   TRACE_NODE* tnode;
+   tnode = TRACE_TOP;
+   TRACE_TOP = tnode->next;
+   free(tnode);
+}
+
+/*===========================================================================*/
+/* PRINT_TRACE                  Prints out the sequence of function calls    */
+/*                              that are on the stack at this instance       */
+/*===========================================================================*/
+
+char* PRINT_TRACE() 
+{
+    int         depth = 50;
+    int         i, length, j;
+    TRACE_NODE* tnode;
+    static char buf[100];
+
+    if (TRACE_TOP == NULL) 
+    {
+        strcpy(buf, "global");
+        return buf;
+    }
+    sprintf(buf, "%s", TRACE_TOP->functionid);
+
+    length = strlen(buf);
+
+    for(i = 1, tnode = TRACE_TOP->next; tnode != NULL && i < depth; 
+        i++,tnode = tnode->next) 
+    {
+        j = strlen(tnode->functionid);
+        if (length + j + 1 < 100) 
+        {
+            sprintf(buf + length, ":%s", tnode->functionid);
+            length += j + 1;
+        }
+        else 
+        {
+            break;
+        }
+    }
+    return buf;
+}
+
+
+            /*********************************************/
+            /*                                           */
+            /*                Linked List                */
+            /*                                           */
+            /*********************************************/
+
+/*===========================================================================*/
+/* SINGLY_LINKED_NODE           The node for a singly linked list            */
+/*===========================================================================*/
+
+struct SINGLY_LINKED_NODE 
+{
+    char* line;                             // pointer to function identifier
+    int index;
+    struct SINGLY_LINKED_NODE* next;        // pointer to next node
+};
+
+typedef struct SINGLY_LINKED_NODE NODE;
+
+NODE* head = NULL;                          // head of the linked list
+
+/*===========================================================================*/
+/* add_to_list                  Add a new string to the linked list          */
+/*===========================================================================*/
+
+void add_to_list(char* line, int index)
+{
+    NODE *temp   = (NODE*) malloc(sizeof(NODE));
+    temp->line   = (char*) malloc(strlen(line) + 1);
+
+    memset(temp->line, '\0', strlen(line) + 1);
+
+    strncpy(temp->line, line, strlen(line) + 1);
+    temp->index  = index;
+    temp->next   = NULL;
+
+    if (head == NULL)
+    {
+        head = temp;
+    }
+    else 
+    {
+        NODE* t = head;
+        while(t->next != NULL)
+        {
+            t = t->next;
+        }
+        t->next = temp;
+    }
+}
+
+/*===========================================================================*/
+/* print_list                   Print the values in the linked list          */
+/*===========================================================================*/
+
+void print_list(NODE* head) 
+{
+    printf("\nThe content of the linked list:\n");
+    NODE* current = head;
+    while (current)
+    {
+        printf("\tIndex: %d\tLine: %s", current->index, current->line);
+        current = current->next;
+    }
+}
+
+/*===========================================================================*/
+/* free_list                    Free the memory in the list                  */
+/*===========================================================================*/
+
+void free_list() 
+{
+    NODE* current = head;
+    while (current)
+    {
+        NODE* next_node = current->next;    // save the next node
+        free(current->line);                // free current node's content
+        free(current);                      // free current node
+        current = next_node;                // move on to the next node
+    }
+}
+
 
             /*********************************************/
             /*                                           */
@@ -39,188 +241,128 @@ void report_error(const char* message, bool exit_program);
             /*                                           */
             /*********************************************/
 
-int main(int argc, char** argv)
+int main(int argc, char **argv) 
 {
-    // check input validity
-    if (!validate_input(argc, argv)) return 1;
+    // make sure the input arguments are valid
+    validate_input(argc, argv);
 
-    //Variables related to file
-    FILE *cmd_file;
-    char input[256] = "";
-    char *cmds[16] = { NULL };
-    char *line;
-    int num = 0;
+    char            lineread[MAX_NUM_LINES];
+    char**          array;
+    FILE*           fptr    = fopen(argv[1], "r");
+    unsigned int    i       = 0;
+    unsigned int    size    = 0;
 
-    pid_t pid = 0;
-    pid_t cpid;
-    int num_of_children = 0;
-    int wait_stat = 0;
-    int err_flag;
-
-    //Variables related to the output files
-    char file_out[15] = "";
-    char file_err[15] = "";
-    int fdout;
-    int fderr;
-
-    //Variables related to error file
-    char *err_content;
-    char err_string[10] = "error:\n";
-
-    //open the text file for reading
-    cmd_file = fopen(argv[1], "r");
-    if (cmd_file != NULL)
+    if (fptr == NULL)
     {
-        printf("%s", "\nProgram Started...\n");
-        
-        //Read each line of the file
-        while (true)
+        report_error("Cannot open input file", true);
+    }
+
+    printf("Program Started...\n");
+
+    int fdesc = open("memtrace.out", O_WRONLY|O_CREAT|O_TRUNC);
+
+    dup2(fdesc, 1);
+
+    array = main_malloc(MAX_NUM_LINES * sizeof(char*));
+
+    for (i = 0; i < MAX_NUM_LINES; i++) 
+    {
+        array[i] = main_malloc(MAX_LINE_LENGTH * sizeof(char));
+    }
+
+    while((fgets (lineread, MAX_NUM_LINES, fptr)) != NULL) 
+    {
+        int len = strlen(lineread);
+
+        if(size >= MAX_NUM_LINES)
         {
-            line = fgets(input, sizeof(input), cmd_file);
-            if (line == NULL) break;
-
-            num++;
-
-            int i = 0;
-            char *cmd;
-
-            // split the command line using delimiters
-            cmds[0] = strtok(input, " \t\n");
-            if (cmds[0] != NULL)
-            {
-                while ((cmd = strtok(NULL, " \t\n")) != NULL)
-                {
-                    i++;
-                    cmds[i] = cmd;
-                }
-            }
-
-            pid = fork();
-            if (pid == -1)
-            {
-                //Print related error when pid is -1
-                err_content = strerror(errno);
-                write(2, err_string, strlen(err_string));
-                write(2, err_content, strlen(err_content));
-                write(2, "\n", 1);
-            }
-            else
-            {
-                if (pid == 0)
-                {
-                    // store the output in the buffer
-                    sprintf(file_out, "%d.out", getpid());
-                    // open an output file
-                    fdout = open(file_out, O_RDWR | O_CREAT | O_APPEND);
-                    // change the permissions of the file
-                    fchmod(fdout, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP |
-                           S_IROTH | S_IWOTH);
-                    if (fdout != -1)
-                    {
-                        dup2(fdout, 1);     //create a copy of file
-                    }
-
-                    //store the output in the buffer
-                    sprintf(file_err, "%d.err", getpid());
-                    //open an output file for error and change the permissions
-                    fderr = open(file_err, O_RDWR | O_CREAT | O_APPEND);
-                    fchmod(fderr, S_IRUSR | S_IWUSR | S_IRGRP |
-                           S_IWGRP | S_IROTH | S_IWOTH);
-                    if (fderr != -1)
-                    {
-                        dup2(fderr, 2);   // create a copy of the file
-                    }
-                    //replace the process image
-                    err_flag = execvp(cmds[0], cmds);
-                    //Output the details of error and exit code
-                    if (err_flag)
-                    {
-                        char err_str[64] = "";
-                        int exitCode = errno;
-                        snprintf(err_str, sizeof(err_str), 
-                                 "failed to execute command: %s err: %d\n", 
-                                 cmds[0], exitCode);
-                        perror(err_str);
-                        exit(exitCode);
-                    }
-                    //close the output files
-                    close(fdout);
-                    close(fderr);
-                    break;
-                }
-                else
-                {
-                    num_of_children++;
-                }
-            }
+            array        = main_realloc(array, size + 1);
+            array[size]  = main_malloc(len * sizeof(char));
         }
-    }
-    else
-    {
-        //Output the errors in the .err file
-        err_content = strerror(errno);
-        write(2, err_string, strlen(err_string));
-        write(2, err_content, strlen(err_content));
-        write(2, "\n", 1);
-    }
-    if (cmd_file != NULL) fclose(cmd_file);
-
-    if (pid != 0)
-    {
-        // append a corresponding statement in the output file pid.out 
-        // whether the child finished/exited
-        while (num_of_children > 0)
+        else if (len > MAX_LINE_LENGTH) 
         {
-            cpid = wait(&wait_stat);
-
-            char str_buff[100] = "";
-            int count;
-            char exit_code;
-            int signal;
-
-            //open an output file pid.out and change the permissions
-            sprintf(file_out, "%d.out", cpid);
-            fdout = open(file_out, O_RDWR | O_CREAT | O_APPEND);
-            fchmod(fdout, S_IRUSR | S_IWUSR | S_IRGRP | 
-                   S_IWGRP | S_IROTH | S_IWOTH);
-
-            //Write the pid of the child in the output file
-            count = snprintf(str_buff, sizeof(str_buff), 
-                             "Finished child %d pid of parent %d\n", 
-                             cpid, getpid());
-            write(fdout, str_buff, count);
-
-            //open the pid.err and give the correct permissions
-            sprintf(file_err, "%d.err", cpid);
-            fderr = open(file_err, O_RDWR | 
-                           O_CREAT | O_APPEND);
-            fchmod(fderr, S_IRUSR | S_IWUSR | S_IRGRP | 
-                   S_IWGRP | S_IROTH | S_IWOTH);
-
-            //Output the exit code
-            if (WIFEXITED(wait_stat))
-            {
-                exit_code = WEXITSTATUS(wait_stat);
-                count = snprintf(str_buff, sizeof(str_buff), 
-                                 "Exited with exit code = %d\n", exit_code);
-            }
-
-            //Output the kill signal
-            if (WIFSIGNALED(wait_stat))
-            {
-                signal = WTERMSIG(wait_stat);
-                count = snprintf(str_buff, sizeof(str_buff), 
-                                 "Killed with signal %d\n", signal);
-            }
-
-            write(fderr, str_buff, count);  // write the error to the file
-            num_of_children--;              // decrease number of children
+            array[size] = main_realloc(array[i], MAX_LINE_LENGTH + len);
         }
+        strncpy(array[size], lineread, len);
+        add_to_list(lineread, size);
+        size++;
     }
-    printf("%s", "\nProgram Finished!\n\n");
+
+    array = main_realloc(array, ((MAX_NUM_LINES+1) * sizeof(char *)));
+    array[MAX_LINE_LENGTH] = main_malloc(MAX_LINE_LENGTH * sizeof(char));
+
+    close(fdesc);
+    fclose(fptr);
+
+    print_list(head);   // print the linked list
+    free_list();        // free the linked list memory
+
+    // print the array
+    printf("\n\nArray Content:\n");
+    for (i = 0; i < size; i++) 
+    {
+        printf("\t%d: %s", i, array[i]);
+    }
+
+    // free the array
+    for (i = 0; i < size; i++) 
+    {
+        main_free(array[i]);
+    }
+    main_free(array);
+
+    printf("Program Finished!");
     return 0;
 }
 
+
+            /*********************************************/
+            /*                                           */
+            /*            Function Definitions           */
+            /*                                           */
+            /*********************************************/
+
+/*===========================================================================*/
+/* REALLOC                      calls realloc                                */
+/*===========================================================================*/
+
+void* REALLOC(void* p, int t, char* file, int line, const char* function )
+{
+   printf("File %s, line %d, function %s reallocated the " 
+          "memory at %p to a new size %d\n", 
+          file, line, function, p, t);
+
+   p = realloc(p,t);
+   printf("FUNCTION STACK TRACE: %s\n", PRINT_TRACE());
+   return p;
+}
+
+/*===========================================================================*/
+/* MALLOC                       calls malloc                                 */
+/*===========================================================================*/
+
+void* MALLOC(int t,char* file,int line,const char* function) 
+{
+    void* p = malloc(t);
+    printf("File %s, line %d, function %s allocated new memory segment "
+           "at %p to size %d\n", 
+           file, line, function, p, t);
+    printf("FUNCTION STACK TRACE: %s\n", PRINT_TRACE());
+    return p;
+}
+
+/*===========================================================================*/
+/* FREE                         calls free                                   */
+/*===========================================================================*/
+
+void FREE(void* p,char* file,int line, const char* function)
+{
+    printf("File %s, line %d, function %s deallocated the memory segment "
+           "at %p\n", 
+           file, line, function, p);
+    free(p);
+    printf("FUNCTION STACK TRACE: %s\n", PRINT_TRACE());
+}
 
 /*===========================================================================*/
 /* validate_input               Check if the command line input is valid     */
@@ -244,7 +386,6 @@ bool validate_input(int argc, char** argv)
     return true;
 }
 
-
 /*===========================================================================*/
 /* get_file_extension           Extract the extension from a given file path */
 /*===========================================================================*/
@@ -252,10 +393,12 @@ bool validate_input(int argc, char** argv)
 const char* get_file_extension(const char* path)
 {
     const char *dot = strrchr(path, '.');
-    if (!dot || dot == path) return "";
+    if (!dot || dot == path) 
+    {
+        return "";
+    }
     return dot + 1;
 }
-
 
 /*===========================================================================*/
 /* print_warning                Print a warning message to the console       */
@@ -272,7 +415,6 @@ void print_warning(int value, unsigned int row_num)
     printf("\033[0m");                      // reset text color
 }
 
-
 /*===========================================================================*/
 /* report_error                 Print an error message and optionally exit   */
 /*                              program with code 1                          */
@@ -283,5 +425,8 @@ void report_error(const char* message, bool exit_program)
     printf("\033[1;31m");                   // change text color to red
     printf("%s", message);                  // print the error message
     printf("\033[0m");                      // reset text color
-    if (exit_program) exit(1);
+    if (exit_program) 
+    {
+        exit(1);
+    }
 }
