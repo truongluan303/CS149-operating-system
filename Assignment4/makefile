@@ -10,7 +10,7 @@ run:
 
 memcheck:
 	make
-	valgrind ./mem_tracer cmdfile.txt
+	valgrind --leak-check=full --track-origins=yes ./mem_tracer cmdfile.txt
 
 clean:
 	rm *.o mem_tracer

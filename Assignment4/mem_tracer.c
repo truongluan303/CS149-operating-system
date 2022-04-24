@@ -107,10 +107,10 @@ void PUSH_TRACE(char* p)
 
 void POP_TRACE() 
 {
-   TRACE_NODE* tnode;
-   tnode = TRACE_TOP;
-   TRACE_TOP = tnode->next;
-   free(tnode);
+   TRACE_NODE* temp;
+   temp = TRACE_TOP;                        // set temp to be the top node
+   TRACE_TOP = temp->next;                  // remove the top node
+   free(temp);                              // deallocate
 }
 
 /*===========================================================================*/
@@ -122,7 +122,7 @@ char* PRINT_TRACE()
 {
     int         depth = 50;
     int         i, length, j;
-    TRACE_NODE* tnode;
+    TRACE_NODE* current;
     static char buf[100];
 
     if (TRACE_TOP == NULL) 
@@ -134,13 +134,13 @@ char* PRINT_TRACE()
 
     length = strlen(buf);
 
-    for(i = 1, tnode = TRACE_TOP->next; tnode != NULL && i < depth; 
-        i++,tnode = tnode->next) 
+    for(i = 1, current = TRACE_TOP->next; current != NULL && i < depth; 
+        i++, current = current->next) 
     {
-        j = strlen(tnode->functionid);
+        j = strlen(current->functionid);
         if (length + j + 1 < 100) 
         {
-            sprintf(buf + length, ":%s", tnode->functionid);
+            sprintf(buf + length, ":%s", current->functionid);
             length += j + 1;
         }
         else 
@@ -165,13 +165,14 @@ char* PRINT_TRACE()
 struct SINGLY_LINKED_NODE 
 {
     char* line;                             // pointer to function identifier
-    int index;
+    unsigned int index;
     struct SINGLY_LINKED_NODE* next;        // pointer to next node
 };
 
 typedef struct SINGLY_LINKED_NODE NODE;
 
 NODE* head = NULL;                          // head of the linked list
+NODE* tail = NULL;                          // tail of the linked list
 
 /*===========================================================================*/
 /* add_to_list                  Add a new string to the linked list          */
@@ -179,27 +180,24 @@ NODE* head = NULL;                          // head of the linked list
 
 void add_to_list(char* line, int index)
 {
-    NODE *temp   = (NODE*) malloc(sizeof(NODE));
-    temp->line   = (char*) malloc(strlen(line) + 1);
+    NODE *nnode  = (NODE*) malloc(sizeof(NODE));        // new node
+    nnode->line  = (char*) malloc(strlen(line) + 1);    // initialize data
 
-    memset(temp->line, '\0', strlen(line) + 1);
+    memset(nnode->line, '\0', strlen(line) + 1);
 
-    strncpy(temp->line, line, strlen(line) + 1);
-    temp->index  = index;
-    temp->next   = NULL;
+    strncpy(nnode->line, line, strlen(line) + 1);
+    nnode->index = index;
+    nnode->next  = NULL;
 
     if (head == NULL)
     {
-        head = temp;
+        head = nnode;
+        tail = nnode;
     }
-    else 
+    else            // append the new node
     {
-        NODE* t = head;
-        while(t->next != NULL)
-        {
-            t = t->next;
-        }
-        t->next = temp;
+        tail->next  = nnode;
+        tail        = tail->next;
     }
 }
 
