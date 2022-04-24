@@ -1,6 +1,6 @@
 /******************************************************************************
  * 
- * @file        hashtable.c
+ * @file        proc_manager.c
  * 
  * @author      Luan Truong
  *              Shubham Goswami
@@ -135,7 +135,8 @@ struct nlist {
 /******************************************************************************
  * @brief   Pointer table
  *****************************************************************************/
-static struct nlist *hashtab[HASHSIZE];
+static struct nlist*    hashtab[HASHSIZE];
+size_t                  htable_size = 0;
 
 /******************************************************************************
  * @brief   The hash function.
@@ -144,7 +145,7 @@ static struct nlist *hashtab[HASHSIZE];
  * 
  * @return  The hash result based on the given process ID.
  *****************************************************************************/
-unsigned hash(int pid)
+unsigned _hash(int pid)
 {
     return pid % HASHSIZE;
 }
@@ -159,7 +160,7 @@ unsigned hash(int pid)
 struct nlist* lookup(int pid)
 {
     struct nlist *np;
-    for (np = hashtab[hash(pid)]; np != NULL; np = np->next) {
+    for (np = hashtab[_hash(pid)]; np != NULL; np = np->next) {
         if (pid == np->pid) {
             return np;  // found
         }
@@ -172,17 +173,16 @@ struct nlist* lookup(int pid)
  *          the same process ID already existed in the table, replace its
  *          command and index with the new ones.
  * 
- * @param command       The command.
  * @param pid           The process ID.
+ * @param command       The command.
  * @param index         The index.
  * 
  * @return  The node inserted (or modified)
  *****************************************************************************/
-struct nlist* insert(char* command, int pid, int index)
+struct nlist* insert(int pid, char* command, int index)
 {
     struct nlist*   np;
     unsigned        hashval;
-
     /*
     --  Case 1: The pid is not found.
     --  Create the pid using malloc.
@@ -193,9 +193,10 @@ struct nlist* insert(char* command, int pid, int index)
         if (np == NULL || (np->command = strdup(command)) == NULL) {
             return NULL;
         }
-        hashval             = hash(pid);
+        hashval             = _hash(pid);
         np->next            = hashtab[hashval];
         hashtab[hashval]    = np;
+        htable_size++;
    }
     /* 
     --  Case 2: The pid is already in the hashslot.
@@ -204,7 +205,6 @@ struct nlist* insert(char* command, int pid, int index)
     else {
         free((void*) np->command);
     }
-
     /*
     --  Assign the command and index to the node.
     */
@@ -225,14 +225,16 @@ struct nlist* insert(char* command, int pid, int index)
 /******************************************************************************
  * @brief   A node for the singly linked list.
  *****************************************************************************/
-typedef struct SINGLY_LINKED_NODE 
+typedef struct SINGLY_LINKED_NODE
 {
     char*                       line;   /* pointer to function identifier */
     size_t                      index;  /* the node's index */
     struct SINGLY_LINKED_NODE*  next;   /* pointer to next node */
 } NODE;
 
-NODE* head = NULL;                      /* head of the linked list */
+size_t  llist_size = 0;                 /* the size of the linked list */
+NODE*   head = NULL;                    /* head of the linked list */
+NODE*   tail = NULL;                    /* tail of the linked list */
 
 /******************************************************************************
  * @brief   Add a new element to the linked list.
@@ -242,33 +244,30 @@ NODE* head = NULL;                      /* head of the linked list */
  *****************************************************************************/
 void append_to_list(char* line, size_t index)
 {
-    NODE *temp   = (NODE*) malloc(sizeof(NODE));
-    temp->line   = (char*) malloc(strlen(line) + 1);
+    NODE *temp      = (NODE*) malloc(sizeof(NODE));
+    temp->line      = (char*) malloc(strlen(line) + 1);
 
     memset(temp->line, '\0', strlen(line) + 1);
 
     strncpy(temp->line, line, strlen(line) + 1);
-    temp->index  = index;
-    temp->next   = NULL;
+    temp->index     = index;
+    temp->next      = NULL;
 
     if (head == NULL) {
-        head = temp;
+        head        = temp;
+        tail        = temp;
     }
     else {
-        NODE* t = head;
-        while(t->next != NULL) {
-            t = t->next;
-        }
-        t->next = temp;
+        tail->next  = temp;
+        tail        = temp;
     }
+    llist_size++;
 }
 
 /******************************************************************************
  * @brief   Print all elements of the linked list.
- * 
- * @param head      The head of the list to be printed.
  *****************************************************************************/
-void print_list(NODE* head) 
+void print_list() 
 {
     printf("\nThe content of the linked list:\n");
     NODE* current = head;
@@ -276,6 +275,7 @@ void print_list(NODE* head)
         printf("\tIndex: %ld\tLine: %s", current->index, current->line);
         current = current->next;
     }
+    printf("\n");
 }
 
 /******************************************************************************
@@ -290,6 +290,7 @@ void free_list()
         free(current);                      // free current node
         current = next_node;                // move on to the next node
     }
+    llist_size = 0;
 }
 
                 /*******************************************/
@@ -297,21 +298,13 @@ void free_list()
                 /*                  M A I N                */
                 /*                                         */
                 /*******************************************/
-/**
- * @brief   Main function.
- * 
- * @param argc      arguments count
- * @param argv      arguments vector
- * 
- * @return  Exit status
- */
+
 int main(int argc, char** argv)
 {
     /*
     --  Validate input arguments
     */
     validate_input(argc, argv);
-
     /*
     --  Ignore the program name
     */
@@ -321,23 +314,26 @@ int main(int argc, char** argv)
     printf("Program Started!\n");
     printf("Reading from \"%s\"...\n", *argv);
 
+    /*
+    --  Create a linked list of commands from the file
+    */
     char    line[MAX_NUM_LINES];
-    FILE*   fptr    = fopen(*argv, "r");
-    //size_t  i       = 0;
-    size_t  size    = 0;
+    FILE*   fptr = fopen(*argv, "r");
 
-    while (fgets(line, MAX_NUM_LINES, fptr)) {
-        size_t len = strlen(line);
+    for (size_t i = 0; fgets(line, MAX_NUM_LINES, fptr); ++i) {
+        append_to_list(line, i);
+    }
+    print_list();
 
-        if (size++ >= MAX_NUM_LINES) {
+    /*
+    --  Execute the commands and add them to a hash table
+    */
+    for (size_t i = 0; i < llist_size; ++i) {
 
-        }
-        else if (len > MAX_LINE_LEN) {
-            
-        }
     }
 
-    fclose(fptr);
+    fclose(fptr);                   // close the text file
+    free_list();                    // free the linked list
     printf("Program Finished!\n");
     return EXIT_SUCCESS;
 }
