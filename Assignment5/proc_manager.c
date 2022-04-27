@@ -411,7 +411,7 @@ int main(int argc, char** argv)
         struct nlist* entry = lookup(pid);
 
         /*
-        --  Check for abnormal termination.
+        --  If normal exit.
         */
         if (WIFEXITED(status)) {
             fderr = redirect_to_file(pid, STDERR_FILENO);
@@ -422,7 +422,10 @@ int main(int argc, char** argv)
                 WEXITSTATUS(status)
             );
             close(fderr);
-        } 
+        }
+        /*
+        --  If abnormal termination.
+        */
         else if (WIFSIGNALED(status)) {
             fderr = redirect_to_file(pid, STDERR_FILENO);
             dprintf(
