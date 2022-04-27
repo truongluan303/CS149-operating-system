@@ -15,21 +15,23 @@
  *****************************************************************************/
 
 #include <stdlib.h>
+#include <fcntl.h>
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
 
 #define CONSOLE_ERROR       "\033[0;31m%s\033[0;00m"
-#define CONSOLE_WARNING     "\033[0;33m%s\033[0;00m"
-#define CONSOLE_SUCCESS     "\033[0;32m%s\033[0;00m"
-#define RESTART_MSG         "RESTARTING..."
-#define FAST_MSG            "Spawning too fast..."
+#define RESTART_MSG         "RESTARTING...\n"
+#define IN_TIME_MSG         "Spawning too fast!!!\n"
+#define EXCEED_TIME_MSG     "Exceeded the limit time. Will be restarted...\n"
 #define FINISH_MSG          "Finished at %d, runtime: %d"
 #define TIME_THRESHOLD      2
 #define MAX_NUM_LINES       1024
-#define MAX_LINE_LEN        10
+#define MAX_FNAME_LEN       15
 
                 /*******************************************/
                 /*                                         */
@@ -62,7 +64,7 @@ double get_elapsed_time(struct timespec start_t, struct timespec end_t)
  * 
  * @return  The duplicated string created.
  *****************************************************************************/
-char* duplicate_str(char *s)
+char* duplicate_str(const char *s)
 {
     char* p = (char*) malloc(strlen(s) + 1);
     if (p != NULL) {
@@ -112,6 +114,74 @@ void validate_input(int argc, char** argv)
     }
 }
 
+/******************************************************************************
+ * @brief   Count the number of tokens of a string after being tokenized.
+ * 
+ * @param str       The string to be tokenized.
+ * @param sep       The seperator.
+ * 
+ * @return  Number of tokens.
+ *****************************************************************************/
+size_t count_tokens(char* str, const char* sep) {
+    if (str == NULL) {
+        return 0;
+    }
+    size_t  tokcount    = 0;                    // No. of tokens.
+    char*   dupstr      = duplicate_str(str);   // Duplicate of given string.
+    char*   token       = strtok(dupstr, sep);  // The first token.
+
+    // loop through each token to count the no. of tokens
+    while (token) {
+        token = strtok(NULL, sep);
+        tokcount++;
+    }
+    free(dupstr);
+    return tokcount;
+}
+
+/******************************************************************************
+ * @brief   Remove the newline character (if exists) in a given string.
+ * 
+ * @param str       The string to remove newline character from.
+ *****************************************************************************/
+void trim_newline(char* str)
+{
+    size_t last = strlen(str) - 1;
+    if (*str && str[last] == '\n') {
+        str[last] = '\0';
+    }
+}
+
+int redirect_to_file(int pid, int fd)
+{
+    
+    char    fout[MAX_NUM_LINES];
+    char*   extension;
+    
+    switch (fd)
+    {
+    case STDOUT_FILENO:
+        extension = "out";
+        break;
+    case STDERR_FILENO:
+        extension = "err";
+        break;
+    default:
+        extension = "txt";
+        break;
+    }
+    sprintf(fout, "%d.%s", pid, extension);
+    int fdout = open(fout, O_RDWR | O_CREAT | O_APPEND);
+    fchmod(
+        fdout,
+        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH
+    );
+    if (fdout != -1) {
+        dup2(fdout, fd);
+    }
+    return fdout;
+}
+
                 /*******************************************/
                 /*                                         */
                 /*                Hash Table               */
@@ -128,15 +198,11 @@ struct nlist {
     int                 pid;        /* the process ID */
     size_t              index;      /* the line index in the input file */
     char*               command;    /* the command stored */
-    struct timespec*    starttime;  /* the start time */
-    struct timespec*    endtime;    /* the end time */
+    struct timespec     starttime;  /* the start time */
 };
 
-/******************************************************************************
- * @brief   Pointer table
- *****************************************************************************/
-static struct nlist*    hashtab[HASHSIZE];
-size_t                  htable_size = 0;
+static struct nlist*    hashtab[HASHSIZE];  /* Pointer table. */
+size_t                  htable_count = 0;   /* No. of elements in table */
 
 /******************************************************************************
  * @brief   The hash function.
@@ -159,13 +225,14 @@ unsigned _hash(int pid)
  *****************************************************************************/
 struct nlist* lookup(int pid)
 {
-    struct nlist *np;
-    for (np = hashtab[_hash(pid)]; np != NULL; np = np->next) {
+    struct nlist *np = hashtab[_hash(pid)];
+    while (np) {
         if (pid == np->pid) {
-            return np;  // found
+            return np;          // found
         }
+        np = np->next;
     }
-    return NULL;        // not found
+    return NULL;                // not found
 }
 
 /******************************************************************************
@@ -176,10 +243,16 @@ struct nlist* lookup(int pid)
  * @param pid           The process ID.
  * @param command       The command.
  * @param index         The index.
+ * @param starttime     The time the command was executed
  * 
  * @return  The node inserted (or modified)
  *****************************************************************************/
-struct nlist* insert(int pid, char* command, int index)
+struct nlist* insert(
+    int pid,
+    char* command,
+    int index,
+    struct timespec starttime
+)
 {
     struct nlist*   np;
     unsigned        hashval;
@@ -187,110 +260,45 @@ struct nlist* insert(int pid, char* command, int index)
     --  Case 1: The pid is not found.
     --  Create the pid using malloc.
     */
-    if ((np = lookup(pid)) == NULL) { 
+    if ((np = lookup(pid)) == NULL) {
         // create the pid
-        np = (struct nlist *) malloc(sizeof(*np));
-        if (np == NULL || (np->command = strdup(command)) == NULL) {
+        np = (struct nlist*) malloc(sizeof(*np));
+        if (np == NULL || (np->command = duplicate_str(command)) == NULL) {
             return NULL;
         }
         hashval             = _hash(pid);
+        np->pid             = pid;
         np->next            = hashtab[hashval];
         hashtab[hashval]    = np;
-        htable_size++;
-   }
+        htable_count++;
+    }
     /* 
     --  Case 2: The pid is already in the hashslot.
-    --  Free the previous command to make room for the new one.
+    --  Override the previous data with the new one.
     */
     else {
         free((void*) np->command);
+        if ((np->command = duplicate_str(command)) == NULL) {
+            return NULL;
+        }
     }
-    /*
-    --  Assign the command and index to the node.
-    */
-    if ((np->command = strdup(command)) == NULL) {
-        return NULL;
-    }
-    np->index = index;
+    np->index       = index;
+    np->starttime   = starttime;
 
     return np;
 }
 
-                /*******************************************/
-                /*                                         */
-                /*               Linked List               */
-                /*                                         */
-                /*******************************************/
-
-/******************************************************************************
- * @brief   A node for the singly linked list.
- *****************************************************************************/
-typedef struct SINGLY_LINKED_NODE
+void free_htable()
 {
-    char*                       line;   /* pointer to function identifier */
-    size_t                      index;  /* the node's index */
-    struct SINGLY_LINKED_NODE*  next;   /* pointer to next node */
-} NODE;
-
-size_t  llist_size = 0;                 /* the size of the linked list */
-NODE*   head = NULL;                    /* head of the linked list */
-NODE*   tail = NULL;                    /* tail of the linked list */
-
-/******************************************************************************
- * @brief   Add a new element to the linked list.
- * 
- * @param line      The new string to be added
- * @param index     The index
- *****************************************************************************/
-void append_to_list(char* line, size_t index)
-{
-    NODE *temp      = (NODE*) malloc(sizeof(NODE));
-    temp->line      = (char*) malloc(strlen(line) + 1);
-
-    memset(temp->line, '\0', strlen(line) + 1);
-
-    strncpy(temp->line, line, strlen(line) + 1);
-    temp->index     = index;
-    temp->next      = NULL;
-
-    if (head == NULL) {
-        head        = temp;
-        tail        = temp;
+    for (size_t i = 0; i < HASHSIZE; ++i) {
+        struct nlist* element = hashtab[i];
+        while (element) {
+            struct nlist* next = element->next;     // save the next node
+            free(element->command);                 // free the command
+            free(element);                          // free the element
+            element = next;                         // move on to next node
+        }
     }
-    else {
-        tail->next  = temp;
-        tail        = temp;
-    }
-    llist_size++;
-}
-
-/******************************************************************************
- * @brief   Print all elements of the linked list.
- *****************************************************************************/
-void print_list() 
-{
-    printf("\nThe content of the linked list:\n");
-    NODE* current = head;
-    while (current) {
-        printf("\tIndex: %ld\tLine: %s", current->index, current->line);
-        current = current->next;
-    }
-    printf("\n");
-}
-
-/******************************************************************************
- * @brief   Free the linked list's memory.
- *****************************************************************************/
-void free_list() 
-{
-    NODE* current = head;
-    while (current) {
-        NODE* next_node = current->next;    // save the next node
-        free(current->line);                // free current node's content
-        free(current);                      // free current node
-        current = next_node;                // move on to the next node
-    }
-    llist_size = 0;
 }
 
                 /*******************************************/
@@ -302,38 +310,206 @@ void free_list()
 int main(int argc, char** argv)
 {
     /*
-    --  Validate input arguments
+    --  Validate input arguments.
     */
     validate_input(argc, argv);
     /*
-    --  Ignore the program name
+    --  Ignore the program name.
     */
     argc--;
     argv++;
 
-    printf("Program Started!\n");
     printf("Reading from \"%s\"...\n", *argv);
 
-    /*
-    --  Create a linked list of commands from the file
-    */
-    char    line[MAX_NUM_LINES];
-    FILE*   fptr = fopen(*argv, "r");
+    char                line[MAX_NUM_LINES];        // A line in the file.
+    FILE*               fptr = fopen(*argv, "r");   // The text file.
+    int                 pid;                        // The process ID.
+    struct timespec     starttime;                  // When execution started.
+    struct timespec     endtime;                    // When execution ended.
+    double              elapsed;                    // The elapsed time.
+    int                 status;                     // The wait status.
+    int                 fdout;                      // Out file descriptor.
+    int                 fderr;                      // Err file descriptor.
 
+    /*
+    --  The first loop.
+    --  Read the commands in the text file.
+    --  Put them into the hash table, which is used for recording each exec.
+    */
     for (size_t i = 0; fgets(line, MAX_NUM_LINES, fptr); ++i) {
-        append_to_list(line, i);
+        /*
+        --  Tokenize the line read.
+        */
+        trim_newline(line);
+        char*   cmdline     = duplicate_str(line);
+        size_t  tokcount    = count_tokens(line, " ");
+        size_t  tidx        = 0;
+        char*   token       = strtok(line, " ");
+        char*   arglist[tokcount + 1];
+        while (token) {
+            arglist[tidx++] = token;
+            token           = strtok(NULL, " ");
+        }
+        arglist[tokcount]   = NULL;
+
+        pid = fork();
+        /*
+        --  If fork error.
+        */
+        if (pid < 0) {
+            fprintf(stderr, "Fork Error!");
+            exit(2);
+        }
+        /* 
+        --  If parent process.
+        */
+        else if (pid > 0) {
+            fdout = redirect_to_file(pid, STDOUT_FILENO);
+            clock_gettime(CLOCK_MONOTONIC, &starttime);
+            struct nlist* nentry = insert(pid, cmdline, i, starttime);
+            dprintf(
+                fdout,
+                "Child %d of parent %d.\n"
+                "Starting command `%s` at index %ld.\n\n",
+                pid,
+                getpid(),
+                nentry->command,
+                nentry->index
+            );
+            close(fdout);
+        }
+        /*
+        --  If child process.
+        */
+        else {
+            pid = getpid();
+            redirect_to_file(pid, STDOUT_FILENO); 
+            // Execute the command.
+            execvp(arglist[0], arglist);
+        }
+        free(cmdline);
     }
-    print_list();
 
     /*
-    --  Execute the commands and add them to a hash table
+    --  The second loop.
+    --  Wait until everything is finished.
+    --  When there is no more child process, the parent process will exit.
     */
-    for (size_t i = 0; i < llist_size; ++i) {
+    while ((pid = wait(&status)) >= 0) {
+        if (pid <= 0) {
+            continue;
+        }
+        struct nlist* entry = lookup(pid);
 
+        /*
+        --  Check for abnormal termination.
+        */
+        if (WIFEXITED(status)) {
+            fderr = redirect_to_file(pid, STDERR_FILENO);
+            dprintf(
+                fderr,
+                "Child %d exits normally with code %d\n",
+                pid,
+                WEXITSTATUS(status)
+            );
+            close(fderr);
+        } 
+        else if (WIFSIGNALED(status)) {
+            fderr = redirect_to_file(pid, STDERR_FILENO);
+            dprintf(
+                fderr,
+                "Child %d terminated abnormally with signal number %d\n",
+                pid,
+                WTERMSIG(status)
+            );
+            close(fderr);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &endtime);
+        elapsed = get_elapsed_time(starttime, endtime);
+
+        /*
+        --  If 2 seconds have elapsed:
+        --  Restart the command in a new process.
+        */
+        if (elapsed > TIME_THRESHOLD) {
+            int ppid = pid;
+            fdout = redirect_to_file(pid, STDOUT_FILENO);
+            dprintf(fdout, EXCEED_TIME_MSG);
+            close(fdout);
+            pid = fork();
+
+            /*
+            --  If fork error.
+            */
+            if (pid < 0) {
+                fprintf(stderr, "Fork Error!");
+                exit(2);
+            }
+            /*
+            --  If parent process.
+            */
+            else if (pid > 0) {
+                insert(pid, entry->command, entry->index, starttime);
+            }
+            /*
+            --  If child process.
+            */
+            else {
+                char*   cmd         = entry->command;
+                size_t  tokcount    = count_tokens(cmd, " ");
+                size_t  tidx        = 0;
+                char*   token       = strtok(cmd, " ");
+                char*   arglist[tokcount + 1];
+                while (token) {
+                    arglist[tidx++] = token;
+                    token           = strtok(NULL, " ");
+                }
+                arglist[tokcount]   = NULL;
+
+                pid     = getpid();
+                fdout   = redirect_to_file(pid, STDOUT_FILENO);
+
+                clock_gettime(CLOCK_MONOTONIC, &starttime);
+                dprintf(fdout, RESTART_MSG);
+                dprintf(
+                    fdout,
+                    "Child %d of parent %d.\n"
+                    "Restarting command `%s` at index %ld.\n\n",
+                    ppid,
+                    pid,
+                    entry->command,
+                    entry->index
+                );
+                close(fdout);
+                execvp(arglist[0], arglist);
+            }
+        }
+        /*
+        --  If command finished within 2 seconds:
+        --  Print the in time message to file and exit.
+        */
+        else {
+            clock_gettime(CLOCK_MONOTONIC, &endtime);
+            fderr = redirect_to_file(pid, STDERR_FILENO);
+            dprintf(fderr, IN_TIME_MSG);
+            close(fderr);
+            fdout = redirect_to_file(pid, STDOUT_FILENO);
+            dprintf(
+                fdout, 
+                "\nStarted at: %ld\nFinished at: %ld\nElapsed time: %fs",
+                entry->starttime.tv_sec,
+                endtime.tv_sec,
+                elapsed
+            );
+            close(fdout);
+        }
     }
 
-    fclose(fptr);                   // close the text file
-    free_list();                    // free the linked list
-    printf("Program Finished!\n");
-    return EXIT_SUCCESS;
+    /*
+    --  Perform the exit protocols
+    */
+    fclose(fptr);                                       // Close text file.
+    free_htable();                                      // Free hash table.
+    return EXIT_SUCCESS;                                // Exit with code 0.
 }

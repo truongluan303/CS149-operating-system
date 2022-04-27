@@ -13,4 +13,4 @@ memcheck:
 	valgrind ./proc_manager cmdfile.txt
 
 clean:
-	rm *.o proc_manager *.err *.out
+	sudo rm *.o proc_manager *.err *.out
