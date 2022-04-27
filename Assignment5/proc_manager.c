@@ -152,6 +152,15 @@ void trim_newline(char* str)
     }
 }
 
+/******************************************************************************
+ * @brief   Redirect the given file descriptor to an output file.
+ * 
+ * @param pid       The process ID, which will be used as the name of the
+ *                  output file.
+ * @param fd        The file descriptor. Should be either stdout or stderr
+ * 
+ * @return  The file descriptor of the ouput file.
+ *****************************************************************************/
 int redirect_to_file(int pid, int fd)
 {
     
