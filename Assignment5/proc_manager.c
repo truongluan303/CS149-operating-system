@@ -3,7 +3,6 @@
  * @file        proc_manager.c
  * 
  * @author      Luan Truong
- *              Shubham Goswami
  * 
  * @brief       A program that tracks data on processes, restart processes,
  *              and time processes.
