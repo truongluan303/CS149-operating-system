@@ -1,8 +1,16 @@
+# the 3 lines below are used to ignore lines without extension
+*
+!*.*
+!*/
+
 *.exe
 *.sh
 *.bat
 *.ps1
 *.zip
+*.o
+*.out
+*.err
 CMakeLists.txt
 .idea
 cmake-build-debug
