@@ -16,12 +16,24 @@
 #include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
+#include <pthread.h>
 
-#define NUM_OF_FILES    3           /* Number of input files. */
+#define FILES_NO        3           /* Number of input files. */
 #define ERROR           -1          /* A number flagged as erroneous. */
 #define ERROR_COLOR     ""          /* Console color for error messages. */
 #define WARNING_COLOR   ""          /* Console color for warning messages. */
+#define SUCCESS_COLOR   ""          /* Console color for success messages. */
+#define INFO_COLOR      ""          /* Console color for info messages. */
 #define RESET_COLOR     ""          /* Reset the console color */
+
+/*---------------------------------------------------------------------------*/
+/* Global variables                                                          */
+/*---------------------------------------------------------------------------*/
+bool            efound  = false;    /* Flag if an error is encountered. */
+unsigned long   msum    = 0;        /* The result matrix sum. */
+size_t          n;                  /* Number of columns to read up to. */
+pthread_t       tids[FILES_NO];     /* IDs of the threads. */
+pthread_mutex_t locks[FILES_NO];    /* Thread locks. */
 
 /*---------------------------------------------------------------------------*/
 /* extract_extension                Extract the extension of a file out of   */
@@ -48,11 +60,11 @@ void validate_input(argc, argv)
     char**      argv;               /* Arguments vector. */
 
 {
-    if (argc != (NUM_OF_FILES + 2)) {
+    if (argc != (FILES_NO + 2)) {
         printf(
             "%sError: Invalid number of arguments. Expected %d, got %d\n%s",
             ERROR_COLOR,
-            NUM_OF_FILES + 2,
+            FILES_NO + 2,
             argc,
             RESET_COLOR
         );
@@ -97,40 +109,44 @@ void validate_input(argc, argv)
 /*                                  contained in a given file. The function  */
 /*                                  will ignore all non-positive numbers.    */
 /*---------------------------------------------------------------------------*/
-long calc_matrix_sum(filepath, n)
+void* calc_matrix_sum(filepath)
 
     char*       filepath;           /* Path to the file. */
-    size_t      n;                  /* Number of columns to progress */
 
 {
     FILE* file;
+    /*
+    --  If the file does not exist, simply print error message and return.
+    */
     if ((file = fopen(filepath, "r")) == NULL) {
-        
-        return -1;
+		printf(
+			"%sError: File not found!\n%s",
+			ERROR_COLOR,
+			RESET_COLOR
+		);
+        efound = true;              /* Flag that an error is encountered. */
+        pthread_exit(NULL);         /* Exit the thread. */
+        return NULL;
     }
-
-    long    result  = 0;            /* The sum to be calculated. */
     size_t  count   = 0;            /* Count the no. of numbers on a line. */
     size_t  row     = 1;            /* current row/line. */
     int     num;                    /* Contains the current number read. */
     char    ch      = 0;            /* Contains the char read. */
     bool    ignore  = false;        /* Ignore the number read if true. */
 
-    while (ch != EOF)
-    {
+    while (ch != EOF) {
         /*
         --  If `ch` is a digit, it means we have encountered a new number.
         --  Consider adding this new number to `result`
         */
         if (isdigit(ch) || ch == '-') {                    
-            // push ch back & scan the whole number               
+            // Push ch back & scan the whole number.        
             ungetc(ch, file);
             fscanf(file, "%d", &num);
             /*
-            --  Only read in the number if ignore flag is not set
+            --  Only read in the number if ignore flag is not set.
             */
-            if (!ignore)
-            {
+            if (!ignore) {
                 if (num < 0) {
                     printf(
                         "%sWarning: Negative number %d found on line %ld "
@@ -143,7 +159,7 @@ long calc_matrix_sum(filepath, n)
                     );
                 }
                 else {
-                    result += num;
+                    msum += num;
                 }
             }
             /*
@@ -160,13 +176,14 @@ long calc_matrix_sum(filepath, n)
             reset to read in data from different row.
         */
         if (ch == '\n') {
-            row++;                  // increase the row number
-            count = 0;              // reset the numbers counted
-            ignore = false;         // reset ignore flag
+            row++;                  /* Increase the row number. */
+            count = 0;              /* Reset the numbers counted. */
+            ignore = false;         /* Reset ignore flag. */
         }
     }
-    fclose(file);                   // close the file
-    return result;                  // return the result calculated
+    fclose(file);                   /* Close the file. */
+    pthread_exit(NULL);             /* Exit the thread. */
+    return NULL;
 }
 
                 /**********************************/
@@ -182,14 +199,53 @@ int main(argc, argv)
 
 {
     /*
-    --  Validate the input arguments
+    --  Validate the input arguments.
     */
     validate_input(argc, argv);
     /*
-    --  Ignore the program name
+    --  Ignore the program name.
     */
     argc--;
     argv++;
+
+    unsigned short  i;
+
+    /*
+    --  Initialize the locks and create the threads.
+    */
+	for (i = 0; i < FILES_NO; ++i) {
+        if (efound) {
+            continue;
+        }
+        if (pthread_mutex_init(&locks[i], NULL) != 0) {
+            efound = true;
+            continue;
+        }
+        printf("Creating thread #%d...\n", i + 1);
+		pthread_create(
+			&tids[i],
+			NULL,
+			calc_matrix_sum,
+            *argv
+		);
+        ++argv;
+	}
+    /*
+    --  Wait for the threads.
+    */
+    for (i = 0; i < FILES_NO; ++i) {
+        if (tids[i] == NULL) {
+            continue;
+        }
+        printf("Waiting for thread #%d...\n", i + 1);
+        pthread_join(tids[i], NULL);
+        printf("Thread #%d exited!\n", i + 1);
+    }
+
+    if (efound) {
+        return EXIT_FAILURE;
+    }
+    printf("\nThe matrix sum is: %lu\n\n", msum);
 
     return EXIT_SUCCESS;
 }
