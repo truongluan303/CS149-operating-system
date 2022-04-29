@@ -32,6 +32,7 @@
 bool            efound  = false;    /* Flag if an error is encountered. */
 unsigned long   msum    = 0;        /* The result matrix sum. */
 size_t          n;                  /* Number of columns to read up to. */
+char**          files[FILES_NO];    /* List of files to be read. */
 pthread_t       tids[FILES_NO];     /* IDs of the threads. */
 pthread_mutex_t locks[FILES_NO];    /* Thread locks. */
 
@@ -208,7 +209,12 @@ int main(argc, argv)
     argc--;
     argv++;
 
-    unsigned short  i;
+    unsigned short  i;              /* Used as loop index. */
+
+    /*
+    --  Initialize global variables.
+    */
+    n = (int)strtol(argv[argc - 1], (char**)NULL, 10);
 
     /*
     --  Initialize the locks and create the threads.
@@ -226,9 +232,8 @@ int main(argc, argv)
 			&tids[i],
 			NULL,
 			calc_matrix_sum,
-            *argv
+            *(argv + i)
 		);
-        ++argv;
 	}
     /*
     --  Wait for the threads.
