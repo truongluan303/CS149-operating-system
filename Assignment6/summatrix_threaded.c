@@ -18,13 +18,22 @@
 #include <ctype.h>
 #include <pthread.h>
 
-#define FILES_NO        3           /* Number of input files. */
-#define ERROR           -1          /* A number flagged as erroneous. */
-#define ERROR_COLOR     ""          /* Console color for error messages. */
-#define WARNING_COLOR   ""          /* Console color for warning messages. */
-#define SUCCESS_COLOR   ""          /* Console color for success messages. */
-#define INFO_COLOR      ""          /* Console color for info messages. */
-#define RESET_COLOR     ""          /* Reset the console color */
+#define FILES_NO    3               /* Number of input files. */
+#define ERROR       -1              /* A number flagged as erroneous. */
+#define ERR_COLOR   "\033[1;31m"    /* Console color for error messages. */
+#define WARN_COLOR  "\033[1;33m"    /* Console color for warning messages. */
+#define SUCC_COLOR  "\033[0;32m"    /* Console color for success messages. */
+#define INFO_COLOR  "\033[0;36m"    /* Console color for info messages. */
+#define RES_COLOR   "\033[0m"       /* Reset the console color */
+
+/*---------------------------------------------------------------------------*/
+/* THREADDATA                       A struct that points to the thread that  */
+/*                                  created the object, which will be useful */
+/*                                  to identify the first thread.            */
+/*---------------------------------------------------------------------------*/
+typedef struct THREADDATA {
+    pthread_t   creator;
+} THREADDATA;
 
 /*---------------------------------------------------------------------------*/
 /* Global variables                                                          */
@@ -32,9 +41,10 @@
 bool            efound  = false;    /* Flag if an error is encountered. */
 unsigned long   msum    = 0;        /* The result matrix sum. */
 size_t          n;                  /* Number of columns to read up to. */
-char**          files[FILES_NO];    /* List of files to be read. */
+char*           files[FILES_NO];    /* List of files to be read. */
 pthread_t       tids[FILES_NO];     /* IDs of the threads. */
 pthread_mutex_t locks[FILES_NO];    /* Thread locks. */
+THREADDATA*     p;
 
 /*---------------------------------------------------------------------------*/
 /* extract_extension                Extract the extension of a file out of   */
@@ -64,10 +74,10 @@ void validate_input(argc, argv)
     if (argc != (FILES_NO + 2)) {
         printf(
             "%sError: Invalid number of arguments. Expected %d, got %d\n%s",
-            ERROR_COLOR,
+            ERR_COLOR,
             FILES_NO + 2,
             argc,
-            RESET_COLOR
+            RES_COLOR
         );
         exit(EXIT_FAILURE);
     }
@@ -84,9 +94,9 @@ void validate_input(argc, argv)
         ) {
             printf(
                 "%sError: Given file %s is not a valid type.\n%s",
-                ERROR_COLOR,
+                ERR_COLOR,
                 filepath,
-                RESET_COLOR
+                RES_COLOR
             );
             exit(EXIT_FAILURE);
         }
@@ -98,8 +108,8 @@ void validate_input(argc, argv)
         if (isdigit(lastarg[i]) == 0) {
             printf(
                 "%sError: N parameter is not valid.\n%s",
-                ERROR_COLOR,
-                RESET_COLOR
+                ERR_COLOR,
+                RES_COLOR
             );
         }
     }
@@ -110,20 +120,53 @@ void validate_input(argc, argv)
 /*                                  contained in a given file. The function  */
 /*                                  will ignore all non-positive numbers.    */
 /*---------------------------------------------------------------------------*/
-void* calc_matrix_sum(filepath)
+void* calc_matrix_sum(t_idx)
 
-    char*       filepath;           /* Path to the file. */
+    size_t      t_idx;              /* The index of the current thread. */
 
 {
-    FILE* file;
+    pthread_t   cur_thread  = tids[t_idx];
+    FILE*       file        = NULL;
+    char*       filepath    = files[t_idx];
+
+    /*
+    --  Lock the thread for critical section.
+    */
+    pthread_mutex_lock(&locks[t_idx]);
+    if (p == NULL) {
+        p           = (THREADDATA*)malloc(sizeof(THREADDATA));
+        p->creator  = cur_thread;
+    }
+    pthread_mutex_unlock(&locks[t_idx]);
+
+    if (p && p->creator == cur_thread) {
+        printf(
+            "This is thread #%lu and I created THREADDATA %s%p%s\n",
+            t_idx,
+            INFO_COLOR,
+            p,
+            RES_COLOR
+        );
+    }
+    else {
+        printf(
+            "This is thread #%lu and I can access the THREADDATA %s%p%s\n",
+            t_idx,
+            INFO_COLOR,
+            p,
+            RES_COLOR
+        );
+    }
+
     /*
     --  If the file does not exist, simply print error message and return.
     */
     if ((file = fopen(filepath, "r")) == NULL) {
 		printf(
-			"%sError: File not found!\n%s",
-			ERROR_COLOR,
-			RESET_COLOR
+			"%sThread #%ld - Error: File not found!\n%s",
+			ERR_COLOR,
+            t_idx,
+			RES_COLOR
 		);
         efound = true;              /* Flag that an error is encountered. */
         pthread_exit(NULL);         /* Exit the thread. */
@@ -150,13 +193,15 @@ void* calc_matrix_sum(filepath)
             if (!ignore) {
                 if (num < 0) {
                     printf(
-                        "%sWarning: Negative number %d found on line %ld "
+                        "%sThread #%lu - "
+                        "Warning: Negative number %d found on line %ld "
                         "of file \"%s\".\n%s",
-                        WARNING_COLOR,
+                        WARN_COLOR,
+                        t_idx,
                         num,
                         row,
                         filepath,
-                        RESET_COLOR
+                        RES_COLOR
                     );
                 }
                 else {
@@ -182,6 +227,20 @@ void* calc_matrix_sum(filepath)
             ignore = false;         /* Reset ignore flag. */
         }
     }
+
+    /*
+    --  Lock the thread for another critical section.
+    */
+    pthread_mutex_lock(&locks[t_idx]);
+    if (p && p->creator == cur_thread) {
+        printf("This is thread #%lu and I delete THREADDATA\n", t_idx);
+        free(p);
+    }
+    else {
+        printf("This is thread #%lu and I can access the THREADDATA\n", t_idx);
+    }
+    pthread_mutex_unlock(&locks[t_idx]);
+
     fclose(file);                   /* Close the file. */
     pthread_exit(NULL);             /* Exit the thread. */
     return NULL;
@@ -209,12 +268,15 @@ int main(argc, argv)
     argc--;
     argv++;
 
-    unsigned short  i;              /* Used as loop index. */
+    size_t  i;                      /* Used as loop index. */
 
     /*
     --  Initialize global variables.
     */
     n = (int)strtol(argv[argc - 1], (char**)NULL, 10);
+    for (i = 0; i < FILES_NO; ++i) {
+        files[i] = *(argv + i);
+    }
 
     /*
     --  Initialize the locks and create the threads.
@@ -227,12 +289,12 @@ int main(argc, argv)
             efound = true;
             continue;
         }
-        printf("Creating thread #%d...\n", i + 1);
+        printf("%sCreating thread #%lu...%s\n", INFO_COLOR, i + 1, RES_COLOR);
 		pthread_create(
 			&tids[i],
 			NULL,
 			calc_matrix_sum,
-            *(argv + i)
+            (void*)i
 		);
 	}
     /*
@@ -242,15 +304,15 @@ int main(argc, argv)
         if (tids[i] == NULL) {
             continue;
         }
-        printf("Waiting for thread #%d...\n", i + 1);
+        printf("%sWaiting for thread #%lu...%s\n", INFO_COLOR, i + 1, RES_COLOR);
         pthread_join(tids[i], NULL);
-        printf("Thread #%d exited!\n", i + 1);
+        printf("%sThread #%lu exited!%s\n", SUCC_COLOR, i + 1, RES_COLOR);
     }
 
     if (efound) {
         return EXIT_FAILURE;
     }
-    printf("\nThe matrix sum is: %lu\n\n", msum);
+    printf("\nThe matrix sum is: %s%lu%s\n\n", SUCC_COLOR, msum, RES_COLOR);
 
     return EXIT_SUCCESS;
 }
