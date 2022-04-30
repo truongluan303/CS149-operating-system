@@ -1,8 +1,8 @@
 output: summatrix_threaded.o
-	gcc -Wall -Werror summatrix_threaded.o -o summatrix_threaded
+	gcc -pthread -Wall -Werror summatrix_threaded.o -o summatrix_threaded
 
 summatrix_threaded.o: summatrix_threaded.c
-	gcc -Wall -Werror -c summatrix_threaded.c
+	gcc -pthread -Wall -Werror -c summatrix_threaded.c
 
 run:
 	make

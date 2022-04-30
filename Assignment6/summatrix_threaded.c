@@ -19,7 +19,6 @@
 #include <pthread.h>
 
 #define FILES_NO    3               /* Number of input files. */
-#define ERROR       -1              /* A number flagged as erroneous. */
 #define ERR_COLOR   "\033[1;31m"    /* Console color for error messages. */
 #define WARN_COLOR  "\033[1;33m"    /* Console color for warning messages. */
 #define SUCC_COLOR  "\033[0;32m"    /* Console color for success messages. */
@@ -289,18 +288,21 @@ int main(argc, argv)
             continue;
         }
         printf("%sCreating thread #%lu...%s\n", INFO_COLOR, i + 1, RES_COLOR);
-		pthread_create(
+		int ret_val = pthread_create(
 			&tids[i],
 			NULL,
 			calc_matrix_sum,
             (void*)i
 		);
+        if (ret_val != EXIT_SUCCESS) {
+            tids[i] = -1;
+        }
 	}
     /*
     --  Wait for the threads.
     */
     for (i = 0; i < FILES_NO; ++i) {
-        if (tids[i] == NULL) {
+        if (tids[i] == -1) {
             continue;
         }
         size_t no = i + 1;
