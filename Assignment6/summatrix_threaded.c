@@ -28,8 +28,7 @@
 
 /*---------------------------------------------------------------------------*/
 /* THREADDATA                       A struct that points to the thread that  */
-/*                                  created the object, which will be useful */
-/*                                  to identify the first thread.            */
+/*                                  created the object.                      */
 /*---------------------------------------------------------------------------*/
 typedef struct THREADDATA {
     pthread_t   creator;
@@ -304,12 +303,14 @@ int main(argc, argv)
         if (tids[i] == NULL) {
             continue;
         }
-        printf("%sWaiting for thread #%lu...%s\n", INFO_COLOR, i + 1, RES_COLOR);
+        size_t no = i + 1;
+        printf("%sWaiting for thread #%lu...%s\n", INFO_COLOR, no, RES_COLOR);
         pthread_join(tids[i], NULL);
-        printf("%sThread #%lu exited!%s\n", SUCC_COLOR, i + 1, RES_COLOR);
+        printf("%sThread #%lu exited!%s\n", SUCC_COLOR, no, RES_COLOR);
     }
 
     if (efound) {
+        printf("\n%sError found! Program Failed.%s\n\n", ERR_COLOR, RES_COLOR);
         return EXIT_FAILURE;
     }
     printf("\nThe matrix sum is: %s%lu%s\n\n", SUCC_COLOR, msum, RES_COLOR);
