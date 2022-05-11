@@ -36,13 +36,31 @@ typedef struct THREADDATA {
 /*---------------------------------------------------------------------------*/
 /* Global variables                                                          */
 /*---------------------------------------------------------------------------*/
-bool            efound  = false;    /* Flag if an error is encountered. */
-unsigned long   msum    = 0;        /* The result matrix sum. */
-size_t          n;                  /* Number of columns to read up to. */
-char*           files[FILES_NO];    /* List of files to be read. */
-pthread_t       tids[FILES_NO];     /* IDs of the threads. */
-pthread_mutex_t locks[FILES_NO];    /* Thread locks. */
-THREADDATA*     p;
+bool                efound  = false;    /* Flag if an error is encountered. */
+unsigned long       msum    = 0;        /* The result matrix sum. */
+size_t              n;                  /* Number of columns to read up to. */
+char*               files[FILES_NO];    /* List of files to be read. */
+pthread_t           tids[FILES_NO];     /* IDs of the threads. */
+pthread_mutex_t     locks[FILES_NO];    /* Thread locks. */
+pthread_mutex_t     lock;               /* Used to lock a block of code. */
+THREADDATA*         p;
+
+/*---------------------------------------------------------------------------*/
+/* pre_print_protocols              Performs the protocols needed before     */
+/*                                  printing something to the console. This  */
+/*                                  includes printing the log index and the  */
+/*                                  current date time.                       */
+/*---------------------------------------------------------------------------*/
+void pre_print_protocols()
+{
+    // Lock to avoid many threads interrupting the code.
+    pthread_mutex_lock(&lock);
+    static size_t   log_idx = 0;
+    time_t          t;
+    time(&t);
+    printf("Log #%ld at %s   >> ", ++log_idx, ctime(&t));
+    pthread_mutex_unlock(&lock);
+}
 
 /*---------------------------------------------------------------------------*/
 /* extract_extension                Extract the extension of a file out of   */
@@ -70,6 +88,7 @@ void validate_input(argc, argv)
 
 {
     if (argc != (FILES_NO + 2)) {
+        pre_print_protocols();
         printf(
             "%sError: Invalid number of arguments. Expected %d, got %d\n%s",
             ERR_COLOR,
@@ -90,6 +109,7 @@ void validate_input(argc, argv)
             strcmp(extract_extension(filepath), "txt") != 0 &&
             strcmp(extract_extension(filepath), "") != 0
         ) {
+            pre_print_protocols();
             printf(
                 "%sError: Given file %s is not a valid type.\n%s",
                 ERR_COLOR,
@@ -104,6 +124,7 @@ void validate_input(argc, argv)
     */
     for (unsigned short i = 0; lastarg[i] != '\0'; i++) {
         if (isdigit(lastarg[i]) == 0) {
+            pre_print_protocols();
             printf(
                 "%sError: N parameter is not valid.\n%s",
                 ERR_COLOR,
@@ -138,6 +159,7 @@ void* calc_matrix_sum(t_idx)
     pthread_mutex_unlock(&locks[t_idx]);
 
     if (p && p->creator == cur_thread) {
+        pre_print_protocols();
         printf(
             "This is thread #%lu and I created THREADDATA %s%p%s\n",
             t_idx,
@@ -147,6 +169,7 @@ void* calc_matrix_sum(t_idx)
         );
     }
     else {
+        pre_print_protocols();
         printf(
             "This is thread #%lu and I can access the THREADDATA %s%p%s\n",
             t_idx,
@@ -160,6 +183,7 @@ void* calc_matrix_sum(t_idx)
     --  If the file does not exist, simply print error message and return.
     */
     if ((file = fopen(filepath, "r")) == NULL) {
+        pre_print_protocols();
 		printf(
 			"%sThread #%ld - Error: File not found!\n%s",
 			ERR_COLOR,
@@ -190,6 +214,7 @@ void* calc_matrix_sum(t_idx)
             */
             if (!ignore) {
                 if (num < 0) {
+                    pre_print_protocols();
                     printf(
                         "%sThread #%lu - "
                         "Warning: Negative number %d found on line %ld "
@@ -231,10 +256,12 @@ void* calc_matrix_sum(t_idx)
     */
     pthread_mutex_lock(&locks[t_idx]);
     if (p && p->creator == cur_thread) {
+        pre_print_protocols();
         printf("This is thread #%lu and I delete THREADDATA\n", t_idx);
         free(p);
     }
     else {
+        pre_print_protocols();
         printf("This is thread #%lu and I can access the THREADDATA\n", t_idx);
     }
     pthread_mutex_unlock(&locks[t_idx]);
@@ -267,6 +294,7 @@ int main(argc, argv)
     argv++;
 
     size_t  i;                      /* Used as loop index. */
+    int     ret_val;                /* Used to store functions' return values. */
 
     /*
     --  Initialize global variables.
@@ -287,35 +315,53 @@ int main(argc, argv)
             efound = true;
             continue;
         }
+        pre_print_protocols();
         printf("%sCreating thread #%lu...%s\n", INFO_COLOR, i + 1, RES_COLOR);
-		int ret_val = pthread_create(
+		ret_val = pthread_create(
 			&tids[i],
 			NULL,
 			calc_matrix_sum,
             (void*)i
 		);
         if (ret_val != EXIT_SUCCESS) {
-            tids[i] = -1;
+            pre_print_protocols();
+            printf(
+                "%sError: Failed to create thread #%lu.%s",
+                ERR_COLOR,
+                i + 1,
+                RES_COLOR
+            );
         }
 	}
     /*
     --  Wait for the threads.
     */
     for (i = 0; i < FILES_NO; ++i) {
-        if (tids[i] == -1) {
+        size_t no = i + 1;
+        pre_print_protocols();
+        printf("%sWaiting for thread #%lu...%s\n", INFO_COLOR, no, RES_COLOR);
+        ret_val = pthread_join(tids[i], NULL);
+        if (ret_val != EXIT_SUCCESS) {
+            pre_print_protocols();
+            printf(
+                "%sError: Failed to join thread #%lu.%s",
+                ERR_COLOR,
+                i + 1,
+                RES_COLOR
+            );
             continue;
         }
-        size_t no = i + 1;
-        printf("%sWaiting for thread #%lu...%s\n", INFO_COLOR, no, RES_COLOR);
-        pthread_join(tids[i], NULL);
+        pre_print_protocols();
         printf("%sThread #%lu exited!%s\n", SUCC_COLOR, no, RES_COLOR);
     }
 
     if (efound) {
+        pre_print_protocols();
         printf("\n%sError found! Program Failed.%s\n\n", ERR_COLOR, RES_COLOR);
         return EXIT_FAILURE;
     }
-    printf("\nThe matrix sum is: %s%lu%s\n\n", SUCC_COLOR, msum, RES_COLOR);
+    pre_print_protocols();
+    printf("MATRIX SUM = %s%lu%s\n\n", SUCC_COLOR, msum, RES_COLOR);
 
     return EXIT_SUCCESS;
 }
